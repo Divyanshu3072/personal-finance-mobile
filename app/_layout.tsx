@@ -2,6 +2,7 @@ import { Stack } from 'expo-router';
 import '../global.css'; // Import NativeWind global css
 import { StatusBar } from 'expo-status-bar';
 import { AuthProvider, useProtectedRoute } from '../src/context/AuthContext';
+import { DataProvider } from '../src/context/DataContext';
 
 function RootLayoutInner() {
   useProtectedRoute();
@@ -33,7 +34,9 @@ function RootLayoutInner() {
 export default function Layout() {
   return (
     <AuthProvider>
-      <RootLayoutInner />
+      <DataProvider>
+        <RootLayoutInner />
+      </DataProvider>
       <StatusBar style="auto" />
     </AuthProvider>
   );

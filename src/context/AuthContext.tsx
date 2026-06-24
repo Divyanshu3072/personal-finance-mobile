@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import * as SecureStore from 'expo-secure-store';
 import { Platform, DeviceEventEmitter } from 'react-native';
 import { useRouter, useSegments, useRootNavigationState } from 'expo-router';
+import { clearUserCache } from '../utils/cache';
 
 type AuthContextType = {
   token: string | null;
@@ -64,6 +65,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const logout = async () => {
+    if (userId) {
+      await clearUserCache(userId);
+    }
     if (Platform.OS === 'web') {
       localStorage.removeItem('userToken');
       localStorage.removeItem('userId');

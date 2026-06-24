@@ -1,17 +1,26 @@
-import { useState, useCallback } from 'react';
-import { View, Text, Pressable, SafeAreaView, FlatList, Alert, ActivityIndicator, TextInput, Modal } from 'react-native';
-import { useRouter, useFocusEffect } from 'expo-router';
+import { useState } from 'react';
+import { View, Text, Pressable, SafeAreaView, FlatList, Alert, ActivityIndicator, TextInput, Modal, RefreshControl } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useAuth } from '../src/context/AuthContext';
-import { getAccounts, deleteAccount, addAccount, getAuthMe, updateAuthMe, getCategories, addCategory, updateCategory, deleteCategory } from '../src/utils/api';
+import { deleteAccount, addAccount, updateAuthMe, addCategory, updateCategory, deleteCategory } from '../src/utils/api';
+import { useData } from '../src/context/DataContext';
 
 export default function Profile() {
   const router = useRouter();
-  const { logout, token, isLoading: authLoading } = useAuth();
-  const [accounts, setAccounts] = useState<any[]>([]);
-  const [categories, setCategories] = useState<any[]>([]);
-  const [userEmail, setUserEmail] = useState('');
-  const [userName, setUserName] = useState('');
-  const [loading, setLoading] = useState(true);
+  const { logout, token } = useAuth();
+  
+  const {
+    accounts,
+    categories,
+    userProfile,
+    isInitializing,
+    isRefreshing,
+    forceRefresh,
+    refreshAccounts,
+    refreshCategories,
+    refreshUserProfile,
+    refreshFailed
+  } = useData();
 
   // Modals
   const [modalVisible, setModalVisible] = useState(false);
@@ -23,6 +32,7 @@ export default function Profile() {
   const [savingBank, setSavingBank] = useState(false);
 
   // Profile Form
+  const [userName, setUserName] = useState(userProfile?.name || '');
   const [savingProfile, setSavingProfile] = useState(false);
 
   // Category Form
@@ -30,35 +40,7 @@ export default function Profile() {
   const [editingCatId, setEditingCatId] = useState<string | null>(null);
   const [savingCat, setSavingCat] = useState(false);
 
-  const loadData = async () => {
-    try {
-      const [accData, catData, authData] = await Promise.all([
-        getAccounts(),
-        getCategories(),
-        getAuthMe().catch(() => null)
-      ]);
-      setAccounts(accData || []);
-      setCategories(catData || []);
-      if (authData) {
-        setUserEmail(authData.email || '');
-        setUserName(authData.name || '');
-      }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useFocusEffect(
-    useCallback(() => {
-      if (token && !authLoading) {
-        loadData();
-      }
-    }, [token, authLoading])
-  );
-
-  if (authLoading || !token) {
+  if (isInitializing || !token) {
     return (
       <View className="flex-1 bg-notion-bg items-center justify-center">
         <ActivityIndicator size="large" color="#37352F" />
@@ -83,7 +65,7 @@ export default function Profile() {
           onPress: async () => {
             try {
               await deleteAccount(id);
-              loadData(); // refresh list
+              await refreshAccounts();
             } catch (e) {
               Alert.alert("Error", "Could not delete account.");
             }
@@ -97,6 +79,7 @@ export default function Profile() {
     setSavingProfile(true);
     try {
       await updateAuthMe({ name: userName.trim() });
+      await refreshUserProfile();
       Alert.alert("Success", "Profile updated.");
     } catch (e) {
       Alert.alert("Error", "Failed to update profile.");
@@ -125,7 +108,7 @@ export default function Profile() {
           onPress: async () => {
             try {
               await deleteCategory(id);
-              loadData();
+              await refreshCategories();
             } catch (e: any) {
               const msg = e.response?.data?.message || "Could not delete category.";
               Alert.alert("Error", msg);
@@ -151,7 +134,7 @@ export default function Profile() {
       setCatModalVisible(false);
       setCatName('');
       setEditingCatId(null);
-      loadData();
+      await refreshCategories();
     } catch (e: any) {
       const msg = e.response?.data?.error || e.response?.data?.message || "Could not save category.";
       Alert.alert("Error", msg);
@@ -168,7 +151,7 @@ export default function Profile() {
       setModalVisible(false);
       setNewBankName('');
       setNewBankBalance('');
-      loadData();
+      await refreshAccounts();
     } catch (e) {
       Alert.alert("Error", "Could not add account.");
     } finally {
@@ -180,8 +163,9 @@ export default function Profile() {
     <SafeAreaView className="flex-1 bg-notion-bg">
       <FlatList
         data={accounts}
-        keyExtractor={item => item.id}
+        keyExtractor={item => item.id?.toString()}
         contentContainerStyle={{ padding: 24, paddingBottom: 100 }}
+        refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={forceRefresh} />}
         ListHeaderComponent={
           <>
             <View className="flex-row justify-between items-center mb-8">
@@ -191,6 +175,12 @@ export default function Profile() {
               </Pressable>
             </View>
 
+            {refreshFailed && (
+              <View className="bg-red-100 rounded-lg p-3 mb-6 border border-red-200">
+                <Text className="text-red-600 text-xs text-center font-medium">Could not refresh. Showing saved data.</Text>
+              </View>
+            )}
+
             {/* Top Half: User Details */}
             <View className="mb-10 p-6 border border-notion-border rounded-xl bg-white shadow-sm">
               <Text className="text-xs font-bold text-notion-gray mb-4 uppercase tracking-widest">User Information</Text>
@@ -198,7 +188,7 @@ export default function Profile() {
               <Text className="text-sm font-bold text-notion-text mb-2">Email</Text>
               <TextInput 
                 className="w-full border border-notion-border rounded-lg px-4 py-3 mb-4 bg-notion-bg text-notion-gray"
-                value={userEmail}
+                value={userProfile?.email || ''}
                 editable={false}
               />
 
@@ -206,7 +196,7 @@ export default function Profile() {
               <TextInput 
                 className="w-full border border-notion-border rounded-lg px-4 py-3 mb-6 bg-white text-notion-text focus:border-notion-text"
                 placeholder="Your Name"
-                value={userName}
+                defaultValue={userProfile?.name || ''}
                 onChangeText={setUserName}
               />
               
@@ -220,7 +210,6 @@ export default function Profile() {
             </View>
 
             <Text className="text-xs font-bold text-notion-gray mb-4 uppercase tracking-widest">Bank Accounts</Text>
-            {loading && <ActivityIndicator color="#37352F" className="mb-4" />}
           </>
         }
         renderItem={({ item }) => (
@@ -247,7 +236,7 @@ export default function Profile() {
             </Pressable>
 
             <Text className="text-xs font-bold text-notion-gray mb-4 uppercase tracking-widest">Categories</Text>
-            {categories.map(cat => (
+            {categories.map((cat: any) => (
               <Pressable 
                 key={cat.id}
                 onLongPress={() => handleCatLongPress(cat.id, cat.name)}

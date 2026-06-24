@@ -1,47 +1,34 @@
-import { useState, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { View, Text, FlatList, Pressable, RefreshControl, ActivityIndicator, Alert, ScrollView } from 'react-native';
-import { useRouter, useFocusEffect } from 'expo-router';
-import { getTransactions, getAccounts, deleteTransaction, getAuthMe } from '../src/utils/api';
+import { useRouter } from 'expo-router';
+import { deleteTransaction } from '../src/utils/api';
 import { useAuth } from '../src/context/AuthContext';
+import { useData } from '../src/context/DataContext';
 
 export default function Dashboard() {
-  const [transactions, setTransactions] = useState<any[]>([]);
-  const [accounts, setAccounts] = useState<any[]>([]);
-  const [refreshing, setRefreshing] = useState(false);
   const [filterType, setFilterType] = useState('ALL'); // ALL, TODAY, THIS_WEEK, THIS_MONTH
   const router = useRouter();
-  const { token, isLoading } = useAuth();
+  const { token } = useAuth();
+  
+  const { 
+    transactions, 
+    accounts, 
+    userProfile,
+    isInitializing, 
+    isRefreshing, 
+    forceRefresh,
+    refreshTransactionsAndAccounts,
+    lastUpdatedText,
+    refreshFailed
+  } = useData();
 
-  const loadData = async () => {
-    setRefreshing(true);
-    try {
-      const [tx, accs, auth] = await Promise.all([
-        getTransactions().catch(() => []),
-        getAccounts().catch(() => []),
-        getAuthMe().catch(() => null)
-      ]);
-      setTransactions(tx || []);
-      setAccounts(accs || []);
-
-      if (auth && auth.onboardingCompleted === false && (!accs || accs.length === 0)) {
-        router.replace('/onboarding');
-      }
-    } catch (e) {
-      console.error('Failed to load dashboard data', e);
-    } finally {
-      setRefreshing(false);
+  useEffect(() => {
+    if (!isInitializing && userProfile && userProfile.onboardingCompleted === false && (!accounts || accounts.length === 0)) {
+      router.replace('/onboarding');
     }
-  };
+  }, [userProfile, accounts, isInitializing]);
 
-  useFocusEffect(
-    useCallback(() => {
-      if (token && !isLoading) {
-        loadData();
-      }
-    }, [token, isLoading])
-  );
-
-  if (isLoading || !token) {
+  if (isInitializing || !token) {
     return (
       <View className="flex-1 bg-notion-bg items-center justify-center">
         <ActivityIndicator size="large" color="#37352F" />
@@ -51,7 +38,7 @@ export default function Dashboard() {
 
   const totalBalance = (accounts || []).reduce((sum, acc) => sum + (Number(acc?.startingBalance) || 0), 0);
 
-  const filteredTransactions = transactions.filter(t => {
+  const filteredTransactions = (transactions || []).filter(t => {
     if (filterType === 'ALL') return true;
     const tDate = new Date(t.transactionDate || t.createdAt);
     const today = new Date();
@@ -90,7 +77,7 @@ export default function Dashboard() {
               { text: "Delete", style: "destructive", onPress: async () => {
                   try {
                     await deleteTransaction(item.id);
-                    loadData();
+                    await refreshTransactionsAndAccounts();
                   } catch (e) {
                     Alert.alert("Error", "Could not delete transaction");
                   }
@@ -125,7 +112,7 @@ export default function Dashboard() {
         
         {accounts.length > 0 && (
           <View className="flex-row flex-wrap gap-2">
-            {accounts.map(acc => (
+            {accounts.map((acc: any) => (
               <View key={acc.id} className="w-[31%] bg-white p-3 rounded-lg border border-notion-border shadow-sm mb-2">
                 <Text className="text-notion-gray text-[10px] font-bold uppercase tracking-wider mb-1" numberOfLines={1}>{acc.name}</Text>
                 <Text className="text-notion-text font-bold text-xs" numberOfLines={1}>
@@ -153,12 +140,24 @@ export default function Dashboard() {
           ))}
         </ScrollView>
       </View>
+      
+      {refreshFailed && (
+        <View className="bg-red-100 px-6 py-2">
+          <Text className="text-red-600 text-xs text-center font-medium">Could not refresh. Showing saved data.</Text>
+        </View>
+      )}
+      
+      {!!lastUpdatedText && !refreshFailed && (
+        <View className="px-6 py-2">
+          <Text className="text-notion-gray text-xs text-center">{lastUpdatedText}</Text>
+        </View>
+      )}
 
       <FlatList
         data={filteredTransactions}
         keyExtractor={item => item.id?.toString() || Math.random().toString()}
         contentContainerStyle={{ padding: 24, paddingBottom: 100 }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={loadData} />}
+        refreshControl={<RefreshControl refreshing={isRefreshing} onRefresh={forceRefresh} />}
         renderItem={({ item }) => (
           <Pressable onLongPress={() => handleLongPress(item)} className="flex-row justify-between items-center py-4 border-b border-notion-border/50 active:opacity-60">
             <View>

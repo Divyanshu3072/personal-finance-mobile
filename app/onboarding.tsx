@@ -1,11 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { View, Text, TextInput, Pressable, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import { addAccount, updateAuthMe } from '../src/utils/api';
+import { useData } from '../src/context/DataContext';
 
 export default function Onboarding() {
   const router = useRouter();
+  const { refreshAccountsAndProfile } = useData();
   const [loading, setLoading] = useState(false);
   
   // State for dynamic accounts
@@ -37,6 +39,8 @@ export default function Onboarding() {
       if (Platform.OS !== 'web') {
         await SecureStore.setItemAsync('onboardingCompleted', 'true');
       }
+
+      await refreshAccountsAndProfile();
 
       if (router.canDismiss()) {
         router.dismissAll();

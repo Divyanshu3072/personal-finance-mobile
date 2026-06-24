@@ -1,45 +1,32 @@
 import { useState, useEffect } from 'react';
 import { View, Text, TextInput, Pressable, KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
-import { addTransaction, getAccounts, getCategories } from '../src/utils/api';
+import { addTransaction } from '../src/utils/api';
 import { useAuth } from '../src/context/AuthContext';
+import { useData } from '../src/context/DataContext';
 
 export default function AddTransaction() {
   const router = useRouter();
-  const { token, isLoading: authLoading } = useAuth();
+  const { token } = useAuth();
+  const { accounts, categories, isInitializing, refreshTransactionsAndAccounts } = useData();
   
   const [amount, setAmount] = useState('');
   const [reason, setReason] = useState('');
   const [type, setType] = useState('OUTGOING');
   
-  const [accounts, setAccounts] = useState<any[]>([]);
-  const [categories, setCategories] = useState<any[]>([]);
-  
   const [selectedAccountId, setSelectedAccountId] = useState('');
   const [selectedCategoryId, setSelectedCategoryId] = useState('');
   
   const [loading, setLoading] = useState(false);
-  const [dataLoading, setDataLoading] = useState(true);
 
   useEffect(() => {
-    if (token) {
-      const fetchData = async () => {
-        try {
-          const accs = await getAccounts();
-          const cats = await getCategories();
-          setAccounts(accs || []);
-          setCategories(cats || []);
-          if (accs?.length > 0) setSelectedAccountId(accs[0].id);
-          if (cats?.length > 0) setSelectedCategoryId(cats[0].id);
-        } catch (e) {
-          console.error(e);
-        } finally {
-          setDataLoading(false);
-        }
-      };
-      fetchData();
+    if (!isInitializing && accounts.length > 0 && !selectedAccountId) {
+      setSelectedAccountId(accounts[0].id);
     }
-  }, [token]);
+    if (!isInitializing && categories.length > 0 && !selectedCategoryId) {
+      setSelectedCategoryId(categories[0].id);
+    }
+  }, [accounts, categories, isInitializing, selectedAccountId, selectedCategoryId]);
 
   const handleSubmit = async () => {
     if (!amount || !reason || !selectedAccountId || !selectedCategoryId) return;
@@ -53,6 +40,7 @@ export default function AddTransaction() {
         type,
         timestamp: new Date().toISOString()
       });
+      await refreshTransactionsAndAccounts();
       router.back();
     } catch (e) {
       console.error(e);
@@ -60,7 +48,7 @@ export default function AddTransaction() {
     }
   };
 
-  if (authLoading || !token) {
+  if (isInitializing || !token) {
     return (
       <View className="flex-1 bg-notion-bg items-center justify-center">
         <ActivityIndicator size="large" color="#37352F" />
@@ -76,9 +64,6 @@ export default function AddTransaction() {
       className="flex-1 bg-notion-bg"
     >
       <ScrollView contentContainerStyle={{ padding: 24, paddingBottom: 50 }}>
-        {dataLoading ? (
-           <ActivityIndicator size="small" color="#37352F" className="mb-6" />
-        ) : null}
       
         <Text className="text-xs font-bold text-notion-gray mb-2 uppercase tracking-widest">Amount</Text>
         <TextInput
@@ -124,7 +109,7 @@ export default function AddTransaction() {
                <Text className={`font-medium ${selectedAccountId === acc.id ? 'text-notion-blue' : 'text-notion-gray'}`}>{acc.name}</Text>
              </Pressable>
           ))}
-          {accounts.length === 0 && !dataLoading && <Text className="text-notion-gray text-sm">No accounts found.</Text>}
+          {accounts.length === 0 && <Text className="text-notion-gray text-sm">No accounts found.</Text>}
         </View>
 
         <Text className="text-xs font-bold text-notion-gray mb-3 uppercase tracking-widest">Category</Text>
@@ -138,7 +123,7 @@ export default function AddTransaction() {
                <Text className={`font-medium capitalize ${selectedCategoryId === cat.id ? 'text-notion-text' : 'text-notion-gray'}`}>{cat.name}</Text>
              </Pressable>
           ))}
-          {categories.length === 0 && !dataLoading && <Text className="text-notion-gray text-sm">No categories found.</Text>}
+          {categories.length === 0 && <Text className="text-notion-gray text-sm">No categories found.</Text>}
         </View>
 
         <Pressable 
